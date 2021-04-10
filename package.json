@@ -1,0 +1,32 @@
+{
+  "name": "whatsaap-api",
+  "version": "1.0.0",
+  "description": "whatsaap api",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "nodemon server.js"
+  },
+  "keywords": [
+    "nodejs",
+    "cors",
+    "express",
+    "http",
+    "qrcode",
+    "socketio",
+    "whatsapp-web.js"
+  ],
+  "author": "viergiawan96@gmail.com",
+  "license": "ISC",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^8.2.0",
+    "express": "^4.17.1",
+    "http": "0.0.1-security",
+    "mysql2": "^2.2.5",
+    "qrcode": "^1.4.4",
+    "sequelize": "^6.6.2",
+    "socket.io": "^4.0.1",
+    "whatsapp-web.js": "^1.12.5"
+  }
+}
