@@ -19,9 +19,12 @@
     #app {
       font-family: "Kiwi Maru", serif;
     }
+    .jumbo{
+      max-width: 20%;
+    }
   </style>
   <body>
-    <div id="app" class="container w-100">
+    <div id="app" class="w-screen">
       <div class="w-100 flex-col">
         <header class="flex-row text-center bg-blue-500 py-3">
           <h3
@@ -33,11 +36,13 @@
         </header>
 
         <div
-          class="max-w-screen-lg bg-blue-500 shadow-2xl rounded-lg mx-auto text-center py-12 mt-4"
+          class="jumbo bg-blue-500 shadow-2xl rounded-lg mx-auto  text-center py-12 mt-4"
         >
-          <div class="mb-3 pt-0">
+          <div class="mb-3 pt-0 flex-col">
+
             <input
               type="text"
+              id="client-id"
               placeholder="Masukan Nomor handphone"
               class="w-80 px-3 py-3 placeholder-blueGray-300 text-blueGray-600 relative bg-white bg-white rounded text-sm border-0 shadow outline-none focus:outline-none focus:ring"
             />
@@ -45,7 +50,7 @@
 
           <div class="mt-5 flex justify-center">
             <button
-              class="px-14 bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 border border-blue-700 rounded"
+              class="px-14 bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 border border-blue-700 rounded add-client-btn"
             >
               Tambah Client
             </button>
@@ -54,38 +59,23 @@
       </div>
 
       <div
-        class="p-10 grid grid-cols-1 sm:grid-cols-1 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-4 gap-2"
+        class="p-10 grid grid-cols-2 sm:grid-cols-1 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 gap-1 client-container"
       >
-        <div class="max-w-sm rounded overflow-hidden shadow-lg">
-          <img class="w-full" src="/mountain.jpg" alt="Mountain" />
-          <div class="px-32 pt-4 pb-2">
+        <div class="max-w-sm rounded overflow-hidden shadow-lg client hidden">
+          <img class="w-full hidden qrcode" src="" alt="Mountain" />
+          <div class="px-4 pt-4 pb-2">
             <span
-              class="inline-block bg-gray-200 rounded-full px-3 py-1 text-sm font-semibold text-gray-700 mr-2 mb-2"
-              >082314123184</span
+              class="inline-block bg-gray-200 rounded-full px-3 py-1 text-sm font-semibold text-gray-700 mr-2 mb-2 id_client hidden"
+              ></span
             >
           </div>
           <span class="font-black px-4">Logs :</span>
           <div class="px-6 py-1">
-            <div class="font-bold text-sm">Mountain</div>
-            <div class="font-bold text-sm">Mountain</div>
-            <div class="font-bold text-sm">Mountain</div>
+            <div class="font-bold text-sm logs"></div>
           </div>
         </div>
 
-        <div class="max-w-sm rounded overflow-hidden shadow-lg">
-          <img class="w-full" src="/mountain.jpg" alt="Mountain" />
-          <div class="px-32 pt-4 pb-2">
-            <span
-              class="inline-block bg-gray-200 rounded-full px-3 py-1 text-sm font-semibold text-gray-700 mr-2 mb-2"
-              >082314123184</span
-            >
-          </div>
-          <span class="font-black px-4">Logs :</span>
-          <div class="px-6 py-1">
-            <div class="font-bold text-sm">Mountain</div>
-            <div class="font-bold text-sm">Mountain</div>
-            <div class="font-bold text-sm">Mountain</div>
-          </div>
+        
         </div>
       </div>
     </div>
@@ -99,7 +89,73 @@
       crossorigin="anonymous"
     ></script>
     <script>
-      $(document).ready(function () {});
+      $(document).ready(function () {
+        var socket = io();
+
+        $('.add-client-btn').click(function () {
+          var clientId = $('#client-id').val();
+          var template = $(".client")
+            .first()
+            .clone()
+            .removeClass("hidden")
+            .addClass(clientId);
+            template.find(".id_client").removeClass('hidden').html(clientId);
+          $('.client-container').append(template);
+
+          socket.emit('create-session', {
+            id : clientId
+          });
+
+          $('#client-id').val('');
+        });
+
+        socket.on("init", function (data) {
+          $(".client-container .client").not(":first").remove();
+
+          for (var i = 0; i < data.length; i++) {
+            var session = data[i];
+
+            var clientId = session.id;
+            var template = $(".client")
+            .first()
+            .clone()
+            .removeClass("hidden")
+            .addClass(clientId);
+            template.find(".id_client").removeClass('hidden').html(clientId);
+            $(".client-container").append(template);
+
+            if (session.ready) {
+              $(`.client.${session.id} .logs`).html('Whatsapp is ready!');
+            } else {
+              $(`.client.${session.id} .logs`).html('connecting...');
+            }
+          }
+        });
+
+        socket.on("remove-session", function (id) {
+          $(`.client.${id}`).remove();
+        });
+
+        socket.on("message", function (data) {
+          $(`.client.${data.id} .logs`).html(data.text);
+        });
+
+        socket.on("qr", function (data) {
+
+          $(`.client.${data.id} .qrcode`).attr("src", data.src);
+          $(`.client.${data.id} .qrcode`).show();
+        });
+
+        socket.on("ready", function (data) {
+          $(`.client.${data.id} .qrcode`).hide();
+        });
+
+        socket.on("authenticated", function (data) {
+          $(`.client.${data.id} .qrcode`).hide();
+        });
+
+
+      });
     </script>
   </body>
 </html>

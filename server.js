@@ -5,6 +5,7 @@ const qrcode = require("qrcode");
 const { Client } = require("whatsapp-web.js");
 const socketIO = require("socket.io");
 const fs = require("fs");
+const { phoneNumberFormatter } = require("./src/helpers/formatter");
 
 const app = express();
 const server = http.createServer(app);
@@ -51,13 +52,11 @@ const getSessionsFile = function () {
 };
 
 const createSession = (id) => {
-  console.log("creating session" + id);
-
-  const SESSIONS_FILE_PATH = `./src/static/whatsapp-session-${id}.json`;
+  console.log("Creating session: " + id);
+  const SESSION_FILE_PATH = `./src/static/${id}.json`;
   let sessionCfg;
-
-  if (fs.existsSync(SESSIONS_FILE_PATH)) {
-    sessionCfg = require(SESSIONS_FILE_PATH);
+  if (fs.existsSync(SESSION_FILE_PATH)) {
+    sessionCfg = require(SESSION_FILE_PATH);
   }
 
   const client = new Client({
@@ -80,17 +79,29 @@ const createSession = (id) => {
 
   client.initialize();
 
+  client.on("message", (msg) => {
+    console.log(msg.from);
+    if (msg.to == "6288233974325@c.us") {
+      setTimeout(async () => {
+        const chat = await msg.getChat();
+        chat.sendStateTyping();
+        setTimeout(() => {
+          client.sendMessage(msg.from, "haiiiiii");
+        }, 3000);
+      }, 120000);
+    }
+  });
+
+  //untuk generate qrcode ke front end
   client.on("qr", (qr) => {
-    log("QR RECEVIED", qr);
-
+    console.log("QR RECEIVED", qr);
     qrcode.toDataURL(qr, (err, url) => {
-      if (err) console.log(err);
-
       io.emit("qr", { id: id, src: url });
-      io.emit("message", { id: id, text: "QR code recevied, Scan Please" });
+      io.emit("message", { id: id, text: "QR Code received, scan please!" });
     });
   });
 
+  //cek sessions apakah sudah tersedia dan di lempar ke front end menggunakan io.emit
   client.on("ready", () => {
     io.emit("ready", { id: id });
     io.emit("message", { id: id, text: "Whatsapp is ready!" });
@@ -101,6 +112,7 @@ const createSession = (id) => {
     setSessionsFile(savedSessions);
   });
 
+  //cek apakah sudah login atau belum dan di infokan ke front end agar qrcode tidak di munculkan lagi
   client.on("authenticated", (session) => {
     io.emit("authenticated", { id: id });
     io.emit("message", { id: id, text: "Whatsapp is authenticated!" });
@@ -112,12 +124,16 @@ const createSession = (id) => {
     });
   });
 
+  //jika login gagal di web.whatsapp akan di infokan ke front end dengan io.emit message
   client.on("auth_failure", function (session) {
-    io.emit("message", { id: id, text: "Auth failure, restarting..." });
+    console.log(session);
+    io.emit("message", { id: session.id, text: "Auth failure, restarting..." });
   });
 
+  //jika dc maka akan di kirim ke front end message dan sessions akan di hapus agar bisa login kembali
   client.on("disconnected", (reason) => {
-    io.emit("message", { id: id, text: "Whatsapp is disconnected!" });
+    console.log(reason);
+    io.emit("message", { id: reason.id, text: "Whatsapp is disconnected!" });
     fs.unlinkSync(SESSION_FILE_PATH, function (err) {
       if (err) return console.log(err);
       console.log("Session file deleted!");
@@ -137,7 +153,6 @@ const createSession = (id) => {
   // Tambahkan client ke sessions
   sessions.push({
     id: id,
-    description: description,
     client: client,
   });
 
@@ -148,7 +163,6 @@ const createSession = (id) => {
   if (sessionIndex == -1) {
     savedSessions.push({
       id: id,
-      description: description,
       ready: false,
     });
     setSessionsFile(savedSessions);
@@ -171,9 +185,49 @@ const init = function (socket) {
 
 init();
 
-io.on("connection", (data) => {
-  console.log("create sessions" + data + id);
-  createSession(data.id);
+io.on("connection", (socket) => {
+  init(socket);
+
+  socket.on("create-session", function (data) {
+    const savedSessions = getSessionsFile();
+    const sessionIndex = savedSessions.find((sess) => sess.id == data.id);
+    if (!sessionIndex) {
+      createSession(data.id);
+    }
+  });
+});
+
+// Send message
+app.post("/send-message", async (req, res) => {
+  const sender = req.body.sender;
+  const number = phoneNumberFormatter(req.body.number);
+  const message = req.body.message;
+
+  const client = sessions.find((sess) => sess.id == sender).client;
+
+  const isRegisteredNumber = await checkRegisteredNumber(number);
+
+  if (!isRegisteredNumber) {
+    return res.status(422).json({
+      status: false,
+      message: "The number is not registered",
+    });
+  }
+
+  client
+    .sendMessage(number, message)
+    .then((response) => {
+      res.status(200).json({
+        status: true,
+        response: response,
+      });
+    })
+    .catch((err) => {
+      res.status(500).json({
+        status: false,
+        response: err,
+      });
+    });
 });
 
 server.listen(port, function () {
