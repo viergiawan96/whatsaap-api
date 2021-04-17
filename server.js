@@ -1,3 +1,5 @@
+require("dotenv").config();
+
 const express = require("express");
 const cors = require("cors");
 const http = require("http");
@@ -6,11 +8,14 @@ const { Client } = require("whatsapp-web.js");
 const socketIO = require("socket.io");
 const fs = require("fs");
 const { phoneNumberFormatter } = require("./src/helpers/formatter");
+const db = require("./src/model");
 
 const app = express();
 const server = http.createServer(app);
 const port = process.env.PORT || 3000;
 const io = socketIO(server);
+
+const trnKeyword = db.trn_keyword;
 
 app.use(express.json());
 app.use(
@@ -51,8 +56,9 @@ const getSessionsFile = function () {
   return JSON.parse(fs.readFileSync(SESSIONS_FILE));
 };
 
-const createSession = (id) => {
+const createSession = async (id) => {
   console.log("Creating session: " + id);
+
   const SESSION_FILE_PATH = `./src/static/${id}.json`;
   let sessionCfg;
   if (fs.existsSync(SESSION_FILE_PATH)) {
@@ -79,17 +85,50 @@ const createSession = (id) => {
 
   client.initialize();
 
-  client.on("message", (msg) => {
-    console.log(msg.from);
-    if (msg.to == "6288233974325@c.us") {
-      setTimeout(async () => {
-        const chat = await msg.getChat();
-        chat.sendStateTyping();
-        setTimeout(() => {
-          client.sendMessage(msg.from, "haiiiiii");
-        }, 3000);
-      }, 120000);
-    }
+  client.on("message", async (msg) => {
+    // console.log(msg);
+    const chat = await msg.getChat();
+    const info = await msg.getInfo();
+    const constact = await msg.getContact();
+
+    // chat.sendStateTyping();
+    console.log("chat", chat);
+    console.log("info", info);
+    console.log("contact", constact);
+
+    // trnKeyword
+    //   .findAll({
+    //     where: {
+    //       id_phone: msg.to,
+    //     },
+    //   })
+    //   .then((result) => {
+    //     if (result.length > 0) {
+    //       const key = result.find((sess) => sess.keyword == msg.body);
+
+    //       if (key) return client.sendMessage(msg.from, key.res_keyword);
+
+    //       return client.sendMessage(msg.from, "Tidak ada di keyword");
+    //     } else {
+    //       return client.sendMessage(
+    //         msg.from,
+    //         "nomor Telepon tidak ada di database"
+    //       );
+    //     }
+    //   })
+    //   .catch((err) => {
+    //     console.log(err);
+    //   });
+
+    // if (msg.to == "6288233974325@c.us") {
+    //   setTimeout(async () => {
+    //     const chat = await msg.getChat();
+    //     chat.sendStateTyping();
+    //     setTimeout(() => {
+    //       client.sendMessage(msg.from, "haiiiiii");
+    //     }, 3000);
+    //   }, 120000);
+    // }
   });
 
   //untuk generate qrcode ke front end
@@ -112,7 +151,6 @@ const createSession = (id) => {
     setSessionsFile(savedSessions);
   });
 
-  //cek apakah sudah login atau belum dan di infokan ke front end agar qrcode tidak di munculkan lagi
   client.on("authenticated", (session) => {
     io.emit("authenticated", { id: id });
     io.emit("message", { id: id, text: "Whatsapp is authenticated!" });
@@ -126,13 +164,11 @@ const createSession = (id) => {
 
   //jika login gagal di web.whatsapp akan di infokan ke front end dengan io.emit message
   client.on("auth_failure", function (session) {
-    console.log(session);
     io.emit("message", { id: session.id, text: "Auth failure, restarting..." });
   });
 
   //jika dc maka akan di kirim ke front end message dan sessions akan di hapus agar bisa login kembali
   client.on("disconnected", (reason) => {
-    console.log(reason);
     io.emit("message", { id: reason.id, text: "Whatsapp is disconnected!" });
     fs.unlinkSync(SESSION_FILE_PATH, function (err) {
       if (err) return console.log(err);
@@ -191,8 +227,14 @@ io.on("connection", (socket) => {
   socket.on("create-session", function (data) {
     const savedSessions = getSessionsFile();
     const sessionIndex = savedSessions.find((sess) => sess.id == data.id);
+
     if (!sessionIndex) {
       createSession(data.id);
+    } else {
+      io.emit("message", {
+        id: sessionIndex.id,
+        text: "authenticated",
+      });
     }
   });
 });
@@ -204,15 +246,6 @@ app.post("/send-message", async (req, res) => {
   const message = req.body.message;
 
   const client = sessions.find((sess) => sess.id == sender).client;
-
-  const isRegisteredNumber = await checkRegisteredNumber(number);
-
-  if (!isRegisteredNumber) {
-    return res.status(422).json({
-      status: false,
-      message: "The number is not registered",
-    });
-  }
 
   client
     .sendMessage(number, message)
@@ -229,6 +262,32 @@ app.post("/send-message", async (req, res) => {
       });
     });
 });
+
+app.post("/post-keyword", async (req, res) => {
+  const phone = await phoneNumberFormatter(req.body.id_phone);
+  const postKeyword = {
+    id_phone: phone,
+    keyword: req.body.keyword.toLowerCase(),
+    res_keyword: req.body.res_keyword,
+  };
+
+  trnKeyword.create(postKeyword).then((result) => {
+    res
+      .status(201)
+      .json({
+        status: 201,
+        data: result,
+      })
+      .catch((err) => {
+        res.status(500).json({
+          status: 500,
+          data: err,
+        });
+      });
+  });
+});
+
+db.sequelize.sync();
 
 server.listen(port, function () {
   console.log("App running on *: " + port);
